@@ -1,7 +1,0 @@
-db.url=jdbc:postgresql://host:port/db
-db.user=user
-db.pass=pass
-
-app.token=blahblah
-consumer.key=bloobloo
-consumer.secret=blumblum

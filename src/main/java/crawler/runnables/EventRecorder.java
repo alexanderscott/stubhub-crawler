@@ -1,0 +1,291 @@
+package crawler.runnables;
+
+import crawler.StubhubApi;
+import crawler.models.ListingUpdate;
+import crawler.models.NewListing;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import util.StopWatch;
+
+import java.sql.*;
+import java.time.ZonedDateTime;
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * Created by paul on 3/15/15.
+ */
+public class EventRecorder implements Runnable {
+
+    private static final Logger log = LoggerFactory.getLogger(EventRecorder.class);
+
+    private StubhubApi api = new StubhubApi();
+    private Connection conn;
+    private int eventId;
+
+    Timestamp timestamp;
+
+    public EventRecorder(Connection conn, int eventId) {
+        this.conn = conn;
+        this.eventId = eventId;
+    }
+
+    @Override
+    public void run() {
+        try {
+            conn.setAutoCommit(false);
+
+            // get existing listings
+            StopWatch sw = new StopWatch();
+            Map<Integer, ListingUpdate> storedListings = getStoredListings();
+            Set<Integer> storedListingIds = storedListings.values().stream()
+                    .map(ls -> ls.id)
+                    .collect(Collectors.toSet());
+            log.info("(" + eventId + ") " + storedListings.size() + " listings found in DB in " + sw);
+
+
+            // query stubhub
+            sw = new StopWatch();
+            Map eventMap = api.getListingsForEvent(eventId);
+            timestamp = new Timestamp(ZonedDateTime.now().toInstant().toEpochMilli());
+            List<Map> currentListingsMaps = (List<Map>) eventMap.get("listing");
+            Set<Integer> currentListingIds = currentListingsMaps.stream()
+                    .map(o -> (int) o.get("listingId"))
+                    .collect(Collectors.toSet());
+            log.info("(" + eventId + ") " + currentListingIds.size() + " listings found on stubhub in " + sw);
+
+            // match them up and update/insert as needed
+            sw = new StopWatch();
+            List<NewListing> newListings = new ArrayList<>();
+            List<ListingUpdate> firstListingUpdates = new ArrayList<>();
+            List<ListingUpdate> listingUpdates = new ArrayList<>();
+            int matchedCount = 0;
+            for (Map listingMap : currentListingsMaps) {
+                int listingId = (int) listingMap.get("listingId");
+
+                if (storedListingIds.contains(listingId)) {
+                    matchedCount++;
+                    ListingUpdate currentListingUpdate = ListingUpdate.makeFromStubhubMap(listingMap);
+                    ListingUpdate oldListingUpdate = storedListings.get(listingId);
+
+                    if (!currentListingUpdate.equals(oldListingUpdate)) { // insert if any changes
+                        ListingUpdate listingUpdate = ListingUpdate.makeNewUpdate(currentListingUpdate, oldListingUpdate);
+                        if (listingUpdate != null) {
+                            listingUpdates.add(listingUpdate);
+                        }
+                    }
+                }
+                else {
+                    // make new listing for insertion
+                    NewListing newListing = new NewListing(listingId, (Integer) listingMap.get("sectionId"),
+                            (String) listingMap.get("row"), (Integer) listingMap.get("zoneId"), (String) listingMap.get("zoneName"),
+                            (String) listingMap.get("sellerSectionName"));
+                    newListings.add(newListing);
+
+
+                    // make first listing updates for insertion
+                    // ugh, this is all so obnoxious, but that's what i get for using a postgres array
+                    String seatsString = (String) listingMap.get("seatNumbers");
+                    String[] splitString = seatsString.split(",");
+                    Integer[] seatsArray = new Integer[splitString.length];
+                    try {
+                        for (int i = 0; i < splitString.length; i++) {
+                            seatsArray[i] = Integer.valueOf(splitString[i]);
+                        }
+                    } catch (NumberFormatException e) { // if we can't parse seat numbers, it's probably something weird like general admission; null is fine
+                        seatsArray = null;
+                    }
+
+                    ListingUpdate firstListingUpdate = new ListingUpdate(
+                            listingId,
+                            ((Double) ((Map) listingMap.get("currentPrice")).get("amount")),
+                            seatsArray,
+                            (Integer) listingMap.get("quantity")
+                    );
+                    firstListingUpdates.add(firstListingUpdate);
+                }
+            }
+
+            // insert new listings
+            insertNewListings(newListings);
+            // combine first time updates with actual updates and insert them all
+            List<ListingUpdate> updates = new ArrayList<>();
+            updates.addAll(firstListingUpdates);
+            updates.addAll(listingUpdates);
+            updateListings(updates);
+
+            // mark listings that can't be found anymore as delisted
+            Set<Integer> delistedIds = new HashSet<>(storedListingIds);
+            delistedIds.removeAll(currentListingIds);
+            markDeslisted(delistedIds);
+
+            log.info("(" + eventId + ") " + newListings.size() + " new listings | " +
+                    delistedIds.size() + " delisted listings | " +
+                    listingUpdates.size() + " of " + matchedCount + " matched listings updated in " + sw);
+
+            conn.commit();
+            conn.setAutoCommit(true);
+
+        } catch (SQLException e) {
+            log.error("Failed to process new listings for event " + eventId, e);
+        }
+
+    }
+
+    /**
+     * @return a map of listingId -> current listing in the database
+     */
+    private Map<Integer, ListingUpdate> getStoredListings() throws SQLException {
+        PreparedStatement listingsSelect = conn.prepareStatement("SELECT lu.listing_id, lu.update_time, lu.price, lu.quantity, lu.seats " +
+                "FROM listing_updates lu " +
+                "JOIN listings l ON l.id = lu.listing_id " +
+                "WHERE l.event_id = ? " +
+                "AND lu.quantity != 0 " +
+                "ORDER BY lu.update_time;");
+        listingsSelect.setInt(1, eventId);
+        ResultSet resultSet = listingsSelect.executeQuery();
+
+        Map<Integer, ListingUpdate> storedListings = new HashMap<>();
+        while (resultSet.next()) {
+            int id = resultSet.getInt("listing_id");
+            ListingUpdate listingUpdate = storedListings.get(id);
+            if (listingUpdate == null) {
+                listingUpdate = new ListingUpdate(id, null, null, null);
+            }
+
+            Double price = resultSet.getDouble("price");
+            Integer quantity = resultSet.getInt("quantity");
+            Array array = resultSet.getArray("seats");
+            Integer[] seats = array == null ? null : (Integer[]) array.getArray();
+
+            // put it in if it's in this row.  by the end (because of ordering in the query),
+            // the object will have the most recent values for the listing
+            if (price != null)
+                listingUpdate.price = price;
+            if (quantity != null)
+                listingUpdate.quantity = quantity;
+            if (seats != null)
+                listingUpdate.seats = seats;
+
+            storedListings.put(id, listingUpdate);
+        }
+        return storedListings;
+    }
+
+    /**
+     * build and run a query of updates to listings
+     */
+    private void updateListings(List<ListingUpdate> listingUpdates) throws SQLException {
+        if (listingUpdates.isEmpty()) {
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("INSERT INTO listing_updates (listing_id, update_time, price, quantity, seats) VALUES ");
+        for (int i = 0; i < listingUpdates.size(); i++) {
+            if (i != listingUpdates.size() - 1) {
+                sb.append("(?, ?, ?, ?, ?), ");
+            } else {
+                sb.append("(?, ?, ?, ?, ?);");
+            }
+        }
+
+        PreparedStatement insert = conn.prepareStatement(sb.toString());
+        int paramIdx = 1;
+        for (ListingUpdate listingUpdate : listingUpdates) {
+            insert.setInt(paramIdx++, listingUpdate.id);
+            insert.setTimestamp(paramIdx++, timestamp);
+            setDoubleOrNull(insert, paramIdx++, listingUpdate.price);
+            setIntOrNull(insert, paramIdx++, listingUpdate.quantity);
+            setIntArrayOrNull(insert, paramIdx++, listingUpdate.seats);
+        }
+
+        insert.execute();
+    }
+
+    /**
+     * build and run a single query to insert all new listings
+     */
+    private void insertNewListings(List<NewListing> newListings) throws SQLException {
+        if (newListings.isEmpty()) {
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("INSERT INTO listings (id, event_id, section_id, rowe, zone_id, zone_name, seller_section_name) VALUES ");
+        for (int i = 0; i < newListings.size(); i++) {
+            if (i != newListings.size() - 1) {
+                sb.append("(?, ?, ?, ?, ?, ?, ?), ");
+            } else { // last one
+                sb.append("(?, ?, ?, ?, ?, ?, ?);");
+            }
+        }
+
+        PreparedStatement insert = conn.prepareStatement(sb.toString());
+        int paramIdx = 1;
+        for (NewListing newListing : newListings) {
+            insert.setInt(paramIdx++, newListing.listingId);
+            insert.setInt(paramIdx++, eventId);
+            setIntOrNull(insert, paramIdx++, newListing.sectionId);
+            insert.setString(paramIdx++, newListing.row); // maybe you think this should be an int? you thought wrong!
+            setIntOrNull(insert, paramIdx++, newListing.zoneId);
+            insert.setString(paramIdx++, newListing.zoneName);
+            insert.setString(paramIdx++, newListing.sellerSectionName);
+        }
+
+        insert.execute();
+    }
+
+    /**
+     * build and run query to insert final listing_update for a listing id that no longer exists
+     */
+    private void markDeslisted(Set<Integer> delistedIds) throws SQLException {
+        if (delistedIds.isEmpty()) {
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("INSERT INTO listing_updates (listing_id, update_time, quantity) VALUES ");
+        for (int i = 0; i < delistedIds.size(); i++) {
+            if (i != delistedIds.size() - 1) {
+                sb.append("(?, ?, 0), ");
+            } else {
+                sb.append("(?, ?, 0);");
+            }
+        }
+
+        PreparedStatement insert = conn.prepareStatement(sb.toString());
+        int paramIdx = 1;
+        for (Integer id : delistedIds) {
+            insert.setInt(paramIdx++, id);
+            insert.setTimestamp(paramIdx++, timestamp);
+        }
+
+        insert.execute();
+    }
+
+    // null insertion utilities
+
+    private void setIntOrNull(PreparedStatement ps, int paramIdx, Integer integer) throws SQLException {
+        if (integer == null) {
+            ps.setNull(paramIdx, Types.NULL);
+        } else {
+            ps.setInt(paramIdx, integer);
+        }
+    }
+
+    private void setDoubleOrNull(PreparedStatement ps, int paramIdx, Double doub) throws SQLException {
+        if (doub == null) {
+            ps.setNull(paramIdx, Types.NULL);
+        } else {
+            ps.setDouble(paramIdx, doub);
+        }
+    }
+
+    private void setIntArrayOrNull(PreparedStatement ps, int paramIdx, Integer[] arr) throws SQLException {
+        if (arr == null) {
+            ps.setNull(paramIdx, Types.NULL);
+        } else {
+            Array array = conn.createArrayOf("smallint", arr);
+            ps.setArray(paramIdx, array);
+        }
+    }
+
+}

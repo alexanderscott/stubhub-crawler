@@ -1,6 +1,6 @@
 .gradle/
 .idea/
-app.properties
+gradle.properties
 build/
 gradle*
 settings.gradle
