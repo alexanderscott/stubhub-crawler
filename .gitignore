@@ -1,8 +1,8 @@
-.gradle/
+.gradle
+found_events.txt
 .idea/
 gradle.properties
 build/
-gradle*
 settings.gradle
 *.iml
 *.ipr
