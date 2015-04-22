@@ -1,0 +1,14 @@
+# postgres
+systemProp.db.url=jdbc:postgresql://server.com:5432/db
+systemProp.db.user=user
+systemProp.db.pass=pass
+
+# stubhub
+systemProp.app.token=blah
+systemProp.consumer.key=blah
+systemProp.consumer.secret=blah
+
+# logging
+systemProp.org.slf4j.simpleLogger.showDateTime=true
+systemProp.org.slf4j.simpleLogger.dateTimeFormat=dd-MM-yy HH:mm:ss.SSS
+systemProp.org.slf4j.simpleLogger.logFile="/dir/file.log"
