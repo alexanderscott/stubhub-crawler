@@ -49,6 +49,10 @@ public class EventRecorder implements Runnable {
             Map eventMap = api.getListingsForEvent(eventId);
             timestamp = new Timestamp(ZonedDateTime.now().toInstant().toEpochMilli());
             List<Map> currentListingsMaps = (List<Map>) eventMap.get("listing");
+            if (currentListingsMaps == null) {
+                log.warn("No listings found for " + eventId);
+                return;
+            }
             Set<Integer> currentListingIds = currentListingsMaps.stream()
                     .map(o -> (int) o.get("listingId"))
                     .collect(Collectors.toSet());
@@ -128,6 +132,8 @@ public class EventRecorder implements Runnable {
 
         } catch (SQLException e) {
             log.error("Failed to process new listings for event " + eventId, e);
+        } finally {
+
         }
 
     }

@@ -4,6 +4,9 @@ import crawler.runnables.EventAdder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -15,6 +18,10 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Created by paul on 3/26/15.
+ *
+ * Takes a bunch of event ids as args, queries and sets them up in the database appropriately for the crawler.  In theory,
+ * you should be able to run this while the crawler is running, and the crawler should pick up on new events for its next
+ * reload.
  */
 public class EventCreator {
 
@@ -26,7 +33,12 @@ public class EventCreator {
 
     public static void main(String[] args) {
         List<Integer> eventIds = new ArrayList<>();
-        Arrays.asList(args).stream().forEach(arg -> eventIds.add(Integer.parseInt(arg)));
+        try {
+            Files.lines(Paths.get("found_events.txt")).forEach(l -> eventIds.add(Integer.valueOf(l.split("\\|")[0])));
+        } catch (IOException e) {
+            log.error("Failed to load found_events.txt: ", e);
+        }
+        log.info("eventIds: " + eventIds);
 
         EventCreator eventCreator = new EventCreator(DBConnFactory.makeConnection());
         try {

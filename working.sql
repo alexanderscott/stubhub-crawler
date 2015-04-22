@@ -28,3 +28,17 @@ order by lu.listing_id, lu.update_time
 
  from listing_updates where update_time = '2015-04-12 22:34:18.489'
 select count(*) from listing_updates
+
+select * from listings where id in (select listing_id from listing_updates where quantity = 0)
+
+select * from listing_updates order by price
+
+
+
+SELECT lu.listing_id, lu.update_time, lu.price, lu.quantity, lu.seats
+FROM listing_updates lu
+JOIN listings l ON l.id = lu.listing_id
+WHERE l.event_id = 9177358 AND lu.quantity != 0 
+ORDER BY lu.update_time;
+
+

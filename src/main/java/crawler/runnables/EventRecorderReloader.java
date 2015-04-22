@@ -18,8 +18,7 @@ public class EventRecorderReloader implements Runnable {
 
     private static final Logger log = LoggerFactory.getLogger(EventRecorderReloader.class);
 
-//    private static String FIND_EVENTS_QUERY = "SELECT id FROM events WHERE utc_date < now()";
-    private static String FIND_EVENTS_QUERY = "SELECT id FROM events";
+    private static String FIND_EVENTS_QUERY = "SELECT id FROM events WHERE utc_date > now()";
 
     Deque<Runnable> runnableDeque;
     Connection conn;
