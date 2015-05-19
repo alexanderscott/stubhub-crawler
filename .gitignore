@@ -4,6 +4,7 @@ found_events.txt
 gradle.properties
 build/
 settings.gradle
+stubhub.log
 *.iml
 *.ipr
 *.iws

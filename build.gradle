@@ -21,7 +21,6 @@ task creator(type: JavaExec) {
     main = 'crawler.EventCreator'
     classpath = sourceSets.main.runtimeClasspath
     systemProperties System.getProperties()
-    args '9176901'
 }
 
 task finder(type: JavaExec) {
