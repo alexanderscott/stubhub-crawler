@@ -33,9 +33,28 @@ public class ListingUpdate {
         int id = (int) listingMap.get("listingId");
         Double price = (Double) ((Map) listingMap.get("currentPrice")).get("amount");
         Integer quantity = (Integer) listingMap.get("quantity");
-        Integer[] seats = (Integer[]) listingMap.get("seats");
+        Integer[] seats = makeSeatsArray((String) listingMap.get("seatNumbers"));
 
         return new ListingUpdate(id, price, seats, quantity);
+    }
+
+    /**
+     * ugh, this is all so obnoxious, but that's what i get for using a postgres array
+     */
+    public static Integer[] makeSeatsArray(String s) {
+        Integer[] seatsArray;
+        try {
+            String[] splitString = s.split(",");
+            seatsArray = new Integer[splitString.length];
+            for (int i = 0; i < splitString.length; i++) {
+                seatsArray[i] = Integer.valueOf(splitString[i]);
+            }
+        } catch (NumberFormatException e) { // if we can't parse seat numbers, it's probably something weird like general admission; null is fine
+            seatsArray = null;
+        } catch (NullPointerException e) { // there is
+            seatsArray = null;
+        }
+        return seatsArray;
     }
 
     /**
@@ -99,5 +118,15 @@ public class ListingUpdate {
         result = 31 * result + (seats != null ? Arrays.hashCode(seats) : 0);
         result = 31 * result + (quantity != null ? quantity.hashCode() : 0);
         return result;
+    }
+
+    @Override
+    public String toString() {
+        return "ListingUpdate{" +
+                "id=" + id +
+                ", price=" + price +
+                ", seats=" + Arrays.toString(seats) +
+                ", quantity=" + quantity +
+                '}';
     }
 }

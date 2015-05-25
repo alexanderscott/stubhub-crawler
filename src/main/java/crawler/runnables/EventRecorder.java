@@ -65,54 +65,45 @@ public class EventRecorder implements Runnable {
             List<ListingUpdate> listingUpdates = new ArrayList<>();
             int matchedCount = 0;
             for (Map listingMap : currentListingsMaps) {
-                int listingId = (int) listingMap.get("listingId");
+                try {
+                    int listingId = (int) listingMap.get("listingId");
 
-                if (storedListingIds.contains(listingId)) {
-                    matchedCount++;
-                    ListingUpdate currentListingUpdate = ListingUpdate.makeFromStubhubMap(listingMap);
-                    ListingUpdate oldListingUpdate = storedListings.get(listingId);
+                    if (storedListingIds.contains(listingId)) {
+                        matchedCount++;
+                        ListingUpdate currentListingUpdate = ListingUpdate.makeFromStubhubMap(listingMap);
+                        ListingUpdate oldListingUpdate = storedListings.get(listingId);
 
-                    if (!currentListingUpdate.equals(oldListingUpdate)) { // insert if any changes
-                        ListingUpdate listingUpdate = ListingUpdate.makeNewUpdate(currentListingUpdate, oldListingUpdate);
-                        if (listingUpdate != null) {
-                            listingUpdates.add(listingUpdate);
+                        if (!currentListingUpdate.equals(oldListingUpdate)) { // insert if any changes
+                            ListingUpdate listingUpdate = ListingUpdate.makeNewUpdate(currentListingUpdate, oldListingUpdate);
+                            if (listingUpdate != null) {
+                                listingUpdates.add(listingUpdate);
+                            }
                         }
+                    } else {
+                        // make new listing for insertion
+                        NewListing newListing = new NewListing(listingId, (Integer) listingMap.get("sectionId"),
+                                (String) listingMap.get("row"), (Integer) listingMap.get("zoneId"), (String) listingMap.get("zoneName"),
+                                (String) listingMap.get("sellerSectionName"));
+                        newListings.add(newListing);
+
+                        // make first listing updates for insertion
+                        ListingUpdate firstListingUpdate = new ListingUpdate(
+                                listingId,
+                                ((Double) ((Map) listingMap.get("currentPrice")).get("amount")),
+                                ListingUpdate.makeSeatsArray((String) listingMap.get("seatNumbers")),
+                                (Integer) listingMap.get("quantity")
+                        );
+                        firstListingUpdates.add(firstListingUpdate);
                     }
-                }
-                else {
-                    // make new listing for insertion
-                    NewListing newListing = new NewListing(listingId, (Integer) listingMap.get("sectionId"),
-                            (String) listingMap.get("row"), (Integer) listingMap.get("zoneId"), (String) listingMap.get("zoneName"),
-                            (String) listingMap.get("sellerSectionName"));
-                    newListings.add(newListing);
-
-
-                    // make first listing updates for insertion
-                    // ugh, this is all so obnoxious, but that's what i get for using a postgres array
-                    String seatsString = (String) listingMap.get("seatNumbers");
-                    String[] splitString = seatsString.split(",");
-                    Integer[] seatsArray = new Integer[splitString.length];
-                    try {
-                        for (int i = 0; i < splitString.length; i++) {
-                            seatsArray[i] = Integer.valueOf(splitString[i]);
-                        }
-                    } catch (NumberFormatException e) { // if we can't parse seat numbers, it's probably something weird like general admission; null is fine
-                        seatsArray = null;
-                    }
-
-                    ListingUpdate firstListingUpdate = new ListingUpdate(
-                            listingId,
-                            ((Double) ((Map) listingMap.get("currentPrice")).get("amount")),
-                            seatsArray,
-                            (Integer) listingMap.get("quantity")
-                    );
-                    firstListingUpdates.add(firstListingUpdate);
+                } catch (Exception e) {
+                    log.error("Failed to deal with listing: " + listingMap, e);
                 }
             }
 
+
             // insert new listings
             insertNewListings(newListings);
-            // combine first time updates with actual updates and insert them all
+            // combine "first time" updates with actual updates and insert them all
             List<ListingUpdate> updates = new ArrayList<>();
             updates.addAll(firstListingUpdates);
             updates.addAll(listingUpdates);
@@ -146,7 +137,7 @@ public class EventRecorder implements Runnable {
                 "FROM listing_updates lu " +
                 "JOIN listings l ON l.id = lu.listing_id " +
                 "WHERE l.event_id = ? " +
-                "AND lu.quantity != 0 " +
+                "AND lu.listing_id NOT IN (SELECT listing_id from listing_updates WHERE quantity = 0) " + // filter out those that have already been delisted
                 "ORDER BY lu.update_time;");
         listingsSelect.setInt(1, eventId);
         ResultSet resultSet = listingsSelect.executeQuery();

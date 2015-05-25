@@ -19,4 +19,16 @@ public class NewListing {
         this.zoneName = zoneName;
         this.sellerSectionName = sellerSectionName;
     }
+
+    @Override
+    public String toString() {
+        return "NewListing{" +
+                "listingId=" + listingId +
+                ", sectionId=" + sectionId +
+                ", row='" + row + '\'' +
+                ", zoneId=" + zoneId +
+                ", zoneName='" + zoneName + '\'' +
+                ", sellerSectionName='" + sellerSectionName + '\'' +
+                '}';
+    }
 }
