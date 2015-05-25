@@ -26,7 +26,7 @@ public class RateLimitedRunnableLooper implements Runnable {
     private TimeUnit timeUnit;
     private long timeout;
     private volatile boolean running;
-    private final boolean reloadable; // it false, it just stops when the Deque is empty
+    private final boolean reloadable; // if false, it just stops when the Deque is empty
 
     private Connection conn;
 
@@ -43,6 +43,8 @@ public class RateLimitedRunnableLooper implements Runnable {
     public void run() {
         running = true;
         while (running) {
+            log.info("******************************************");
+
             long start = System.currentTimeMillis();
 
             if (!runnableDeque.isEmpty()) {

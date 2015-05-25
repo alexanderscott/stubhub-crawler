@@ -22,6 +22,7 @@ public class EventRecorder implements Runnable {
     private StubhubApi api = new StubhubApi();
     private Connection conn;
     private int eventId;
+    private boolean noWrite = false; // true for debugging purposes
 
     Timestamp timestamp;
 
@@ -42,7 +43,6 @@ public class EventRecorder implements Runnable {
                     .map(ls -> ls.id)
                     .collect(Collectors.toSet());
             log.info("(" + eventId + ") " + storedListings.size() + " listings found in DB in " + sw);
-
 
             // query stubhub
             sw = new StopWatch();
@@ -99,7 +99,6 @@ public class EventRecorder implements Runnable {
                     log.error("Failed to deal with listing: " + listingMap, e);
                 }
             }
-
 
             // insert new listings
             insertNewListings(newListings);
@@ -173,7 +172,7 @@ public class EventRecorder implements Runnable {
      * build and run a query of updates to listings
      */
     private void updateListings(List<ListingUpdate> listingUpdates) throws SQLException {
-        if (listingUpdates.isEmpty()) {
+        if (listingUpdates.isEmpty() || noWrite) {
             return;
         }
         StringBuilder sb = new StringBuilder();
@@ -203,7 +202,7 @@ public class EventRecorder implements Runnable {
      * build and run a single query to insert all new listings
      */
     private void insertNewListings(List<NewListing> newListings) throws SQLException {
-        if (newListings.isEmpty()) {
+        if (newListings.isEmpty() || noWrite) {
             return;
         }
         StringBuilder sb = new StringBuilder();
@@ -235,7 +234,7 @@ public class EventRecorder implements Runnable {
      * build and run query to insert final listing_update for a listing id that no longer exists
      */
     private void markDeslisted(Set<Integer> delistedIds) throws SQLException {
-        if (delistedIds.isEmpty()) {
+        if (delistedIds.isEmpty() || noWrite) {
             return;
         }
         StringBuilder sb = new StringBuilder();
