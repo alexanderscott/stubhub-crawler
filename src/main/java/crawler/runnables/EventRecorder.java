@@ -42,6 +42,10 @@ public class EventRecorder implements Runnable {
             Set<Integer> storedListingIds = storedListings.values().stream()
                     .map(ls -> ls.id)
                     .collect(Collectors.toSet());
+            Set<Integer> recentlyDelistedIds = storedListings.values().stream()
+                    .filter(ls -> ls.quantity.equals(0))
+                    .map(ls -> ls.id)
+                    .collect(Collectors.toSet());
             log.info("(" + eventId + ") " + storedListings.size() + " listings found in DB in " + sw);
 
             // query stubhub
@@ -109,12 +113,13 @@ public class EventRecorder implements Runnable {
             updateListings(updates);
 
             // mark listings that can't be found anymore as delisted
-            Set<Integer> delistedIds = new HashSet<>(storedListingIds);
-            delistedIds.removeAll(currentListingIds);
-            markDeslisted(delistedIds);
+            Set<Integer> idsToDelist = new HashSet<>(storedListingIds); // amongst all stored listings...
+            idsToDelist.removeAll(currentListingIds); // don't mark as delisted if we just saw a live listing...
+            idsToDelist.removeAll(recentlyDelistedIds); // or if the most recent update is a "delist" (that would be redundant)
+            markDeslisted(idsToDelist);
 
             log.info("(" + eventId + ") " + newListings.size() + " new listings | " +
-                    delistedIds.size() + " delisted listings | " +
+                    idsToDelist.size() + " delisted listings | " +
                     listingUpdates.size() + " of " + matchedCount + " matched listings updated in " + sw);
 
             conn.commit();
@@ -136,7 +141,7 @@ public class EventRecorder implements Runnable {
                 "FROM listing_updates lu " +
                 "JOIN listings l ON l.id = lu.listing_id " +
                 "WHERE l.event_id = ? " +
-                "AND lu.listing_id NOT IN (SELECT listing_id from listing_updates WHERE quantity = 0) " + // filter out those that have already been delisted
+//                "AND lu.listing_id NOT IN (SELECT listing_id from listing_updates WHERE quantity = 0) " + // DON'T filter out those that have already been delisted, they may come back again???
                 "ORDER BY lu.update_time;");
         listingsSelect.setInt(1, eventId);
         ResultSet resultSet = listingsSelect.executeQuery();
@@ -149,9 +154,9 @@ public class EventRecorder implements Runnable {
                 listingUpdate = new ListingUpdate(id, null, null, null);
             }
 
-            Double price = resultSet.getDouble("price");
-            Integer quantity = resultSet.getInt("quantity");
-            Array array = resultSet.getArray("seats");
+            Double price = getDoubleOrNull(resultSet, "price");
+            Integer quantity = getIntOrNull(resultSet, "quantity");
+            Array array = getArrayOrNull(resultSet, "seats");
             Integer[] seats = array == null ? null : (Integer[]) array.getArray();
 
             // put it in if it's in this row.  by the end (because of ordering in the query),
@@ -257,7 +262,7 @@ public class EventRecorder implements Runnable {
         insert.execute();
     }
 
-    // null insertion utilities
+    // null get/set utilities because java.sql actually sucks
 
     private void setIntOrNull(PreparedStatement ps, int paramIdx, Integer integer) throws SQLException {
         if (integer == null) {
@@ -282,6 +287,21 @@ public class EventRecorder implements Runnable {
             Array array = conn.createArrayOf("smallint", arr);
             ps.setArray(paramIdx, array);
         }
+    }
+
+    private Integer getIntOrNull(ResultSet rs, String colName) throws SQLException {
+        int val = rs.getInt(colName);
+        return rs.wasNull() ? null : val;
+    }
+
+    private Double getDoubleOrNull(ResultSet rs, String colName) throws SQLException {
+        double val = rs.getDouble(colName);
+        return rs.wasNull() ? null : val;
+    }
+
+    private Array getArrayOrNull(ResultSet rs, String colName) throws SQLException {
+        Array arr = rs.getArray(colName);
+        return rs.wasNull() ? null : arr;
     }
 
 }
