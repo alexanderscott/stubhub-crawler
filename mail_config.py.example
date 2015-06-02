@@ -1,0 +1,4 @@
+user = 'gmailuser'
+password = 'gmailpassword'
+email = 'email@gmail.com'
+smtp_server = 'smtp.gmail.com'
