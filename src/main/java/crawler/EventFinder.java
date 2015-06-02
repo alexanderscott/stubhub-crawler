@@ -22,24 +22,29 @@ public class EventFinder {
         this.api = new StubhubApi();
     }
 
-    private void findEvents() {
-        Map events = api.findEvents("Chicago Cubs");
+    private void findEvents(String query) {
+        Map events = api.findEvents(query);
         List<Map> eventsJson = ((List<Map>) events.get("events"));
 
-        try {
-            PrintWriter pw = new PrintWriter("found_events.txt");
-            for (Map map : eventsJson) {
-                Integer id = (Integer) map.get("id");
-                String title = (String) map.get("title");
-                pw.append(id + "|" + title + "\n");
+        if (eventsJson == null) {
+            log.warn("No events found for " + query);
+        } else {
+            try {
+                PrintWriter pw = new PrintWriter("found_events.txt");
+                for (Map map : eventsJson) {
+                    Integer id = (Integer) map.get("id");
+                    String title = (String) map.get("title");
+                    pw.append(id + "|" + title + "\n");
+                }
+                pw.close();
+            } catch (FileNotFoundException e) {
+                log.error("Cannot write events to file: ", e);
             }
-            pw.close();
-        } catch (FileNotFoundException e) {
-            log.error("Cannot write events to file: ", e);
         }
+
     }
 
     public static void main(String[] args) {
-        new EventFinder().findEvents();
+        new EventFinder().findEvents("NHL Stanley Cup Finals Tickets");
     }
 }

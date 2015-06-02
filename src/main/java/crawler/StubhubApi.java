@@ -58,10 +58,10 @@ public class StubhubApi {
         return sendRequest(addHeadersToRequest(request));
     }
 
-    public Map findEvents(String performerName) {
+    public Map findEvents(String title) {
         List<NameValuePair> params = new ArrayList<>();
 //        params.add(new BasicNameValuePair("q", query));
-        params.add(new BasicNameValuePair("performerName", performerName));
+        params.add(new BasicNameValuePair("title", title));
         params.add(new BasicNameValuePair("limit", Integer.toString(maxRows)));
         return sendRequest(buildGetWithBodyRequest("/search/catalog/events/v2", params));
     }

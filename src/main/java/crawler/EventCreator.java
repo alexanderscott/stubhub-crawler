@@ -63,16 +63,5 @@ public class EventCreator {
         }
     }
 
-    public List<Integer> getExistingVenueIds() throws SQLException {
-        List<Integer> existingVenueIds = new ArrayList<>();
-        PreparedStatement ps = conn.prepareStatement("SELECT id FROM venues");
 
-        ResultSet resultSet = ps.executeQuery();
-        while (resultSet.next()) {
-            existingVenueIds.add(resultSet.getInt("id"));
-        }
-
-        ps.close();
-        return existingVenueIds;
-    }
 }

@@ -20,18 +20,23 @@ public class EventAdder implements Runnable {
     private StubhubApi api;
     private Connection conn;
     private int eventId;
-    private List<Integer> existingVenueIds;
 
-    public EventAdder(StubhubApi api, Connection conn, int eventId, List<Integer> existingVenueIds) {
+    public EventAdder(StubhubApi api, Connection conn, int eventId) {
         this.api = api;
         this.conn = conn;
         this.eventId = eventId;
-        this.existingVenueIds = existingVenueIds;
     }
 
     @Override
     public void run() {
         Map eventMetadata = api.getEventMetadata(eventId);
+
+        List<Integer> existingVenueIds = null;
+        try {
+            existingVenueIds = getExistingVenueIds();
+        } catch (SQLException e) {
+            log.error("Cannot find existings venues in DB", e);
+        }
 
         Map venueMap = (Map) eventMetadata.get("venue");
         int venueId = (int) venueMap.get("id");
@@ -78,5 +83,18 @@ public class EventAdder implements Runnable {
         }
 
         log.info("Event " + eventId + " stored in DB");
+    }
+
+    public List<Integer> getExistingVenueIds() throws SQLException {
+        List<Integer> existingVenueIds = new ArrayList<>();
+        PreparedStatement ps = conn.prepareStatement("SELECT id FROM venues");
+
+        ResultSet resultSet = ps.executeQuery();
+        while (resultSet.next()) {
+            existingVenueIds.add(resultSet.getInt("id"));
+        }
+
+        ps.close();
+        return existingVenueIds;
     }
 }
