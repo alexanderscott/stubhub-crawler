@@ -5,6 +5,8 @@ gradle.properties
 build/
 settings.gradle
 stubhub.log
+.DS_Store
+*.sql
 *.iml
 *.ipr
 *.iws
